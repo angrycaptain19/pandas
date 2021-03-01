@@ -138,18 +138,17 @@ def _assert_caught_no_extra_warnings(
     expected_warning: Optional[Union[Type[Warning], bool]],
 ) -> None:
     """Assert that no extra warnings apart from the expected ones are caught."""
-    extra_warnings = []
+    extra_warnings = [
+        (
+            actual_warning.category.__name__,
+            actual_warning.message,
+            actual_warning.filename,
+            actual_warning.lineno,
+        )
+        for actual_warning in caught_warnings
+        if _is_unexpected_warning(actual_warning, expected_warning)
+    ]
 
-    for actual_warning in caught_warnings:
-        if _is_unexpected_warning(actual_warning, expected_warning):
-            extra_warnings.append(
-                (
-                    actual_warning.category.__name__,
-                    actual_warning.message,
-                    actual_warning.filename,
-                    actual_warning.lineno,
-                )
-            )
 
     if extra_warnings:
         raise AssertionError(f"Caused unexpected warning(s): {repr(extra_warnings)}")

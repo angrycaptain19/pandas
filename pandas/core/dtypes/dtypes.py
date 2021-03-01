@@ -680,21 +680,20 @@ class DatetimeTZDtype(PandasExtensionDtype):
             unit, tz = unit.unit, unit.tz  # type: ignore[attr-defined]
 
         if unit != "ns":
-            if isinstance(unit, str) and tz is None:
-                # maybe a string like datetime64[ns, tz], which we support for
-                # now.
-                result = type(self).construct_from_string(unit)
-                unit = result.unit
-                tz = result.tz
-                msg = (
-                    f"Passing a dtype alias like 'datetime64[ns, {tz}]' "
-                    "to DatetimeTZDtype is no longer supported. Use "
-                    "'DatetimeTZDtype.construct_from_string()' instead."
-                )
-                raise ValueError(msg)
-            else:
+            if not isinstance(unit, str) or tz is not None:
                 raise ValueError("DatetimeTZDtype only supports ns units")
 
+            # maybe a string like datetime64[ns, tz], which we support for
+            # now.
+            result = type(self).construct_from_string(unit)
+            unit = result.unit
+            tz = result.tz
+            msg = (
+                f"Passing a dtype alias like 'datetime64[ns, {tz}]' "
+                "to DatetimeTZDtype is no longer supported. Use "
+                "'DatetimeTZDtype.construct_from_string()' instead."
+            )
+            raise ValueError(msg)
         if tz:
             tz = timezones.maybe_get_tz(tz)
             tz = timezones.tz_standardize(tz)
@@ -956,10 +955,7 @@ class PeriodDtype(dtypes.PeriodDtypeBase, PandasExtensionDtype):
             # but doesn't regard freq str like "U" as dtype.
             if dtype.startswith("period[") or dtype.startswith("Period["):
                 try:
-                    if cls._parse_dtype_strict(dtype) is not None:
-                        return True
-                    else:
-                        return False
+                    return cls._parse_dtype_strict(dtype) is not None
                 except ValueError:
                     return False
             else:
@@ -990,11 +986,7 @@ class PeriodDtype(dtypes.PeriodDtypeBase, PandasExtensionDtype):
         from pandas.core.arrays import PeriodArray
         from pandas.core.arrays._arrow_utils import pyarrow_array_to_numpy_and_mask
 
-        if isinstance(array, pyarrow.Array):
-            chunks = [array]
-        else:
-            chunks = array.chunks
-
+        chunks = [array] if isinstance(array, pyarrow.Array) else array.chunks
         results = []
         for arr in chunks:
             data, mask = pyarrow_array_to_numpy_and_mask(arr, dtype="int64")
@@ -1077,12 +1069,11 @@ class IntervalDtype(PandasExtensionDtype):
                     gd = m.groupdict()
                     subtype = gd["subtype"]
                     if gd.get("closed", None) is not None:
-                        if closed is not None:
-                            if closed != gd["closed"]:
-                                raise ValueError(
-                                    "'closed' keyword does not match value "
-                                    "specified in dtype string"
-                                )
+                        if closed is not None and closed != gd["closed"]:
+                            raise ValueError(
+                                "'closed' keyword does not match value "
+                                "specified in dtype string"
+                            )
                         closed = gd["closed"]
 
             try:
@@ -1203,10 +1194,7 @@ class IntervalDtype(PandasExtensionDtype):
         if isinstance(dtype, str):
             if dtype.lower().startswith("interval"):
                 try:
-                    if cls.construct_from_string(dtype) is not None:
-                        return True
-                    else:
-                        return False
+                    return cls.construct_from_string(dtype) is not None
                 except (ValueError, TypeError):
                     return False
             else:
@@ -1223,11 +1211,7 @@ class IntervalDtype(PandasExtensionDtype):
 
         from pandas.core.arrays import IntervalArray
 
-        if isinstance(array, pyarrow.Array):
-            chunks = [array]
-        else:
-            chunks = array.chunks
-
+        chunks = [array] if isinstance(array, pyarrow.Array) else array.chunks
         results = []
         for arr in chunks:
             left = np.asarray(arr.storage.field("left"), dtype=self.subtype)
@@ -1243,7 +1227,7 @@ class IntervalDtype(PandasExtensionDtype):
             return None
 
         closed = cast("IntervalDtype", dtypes[0]).closed
-        if not all(cast("IntervalDtype", x).closed == closed for x in dtypes):
+        if any(cast("IntervalDtype", x).closed != closed for x in dtypes):
             return np.dtype(object)
 
         from pandas.core.dtypes.cast import find_common_type

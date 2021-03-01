@@ -61,10 +61,7 @@ class Term(ops.Term):
     env: PyTablesScope
 
     def __new__(cls, name, env, side=None, encoding=None):
-        if isinstance(name, str):
-            klass = cls
-        else:
-            klass = Constant
+        klass = cls if isinstance(name, str) else Constant
         return object.__new__(klass)
 
     def __init__(self, name, env: PyTablesScope, side=None, encoding=None):

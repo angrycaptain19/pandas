@@ -1901,11 +1901,7 @@ class DataFrame(NDFrame, OpsMixin):
             else:
                 values.extend(itertools.islice(data, nrows - 1))
 
-            if dtype is not None:
-                data = np.array(values, dtype=dtype)
-            else:
-                data = values
-
+            data = np.array(values, dtype=dtype) if dtype is not None else values
         if isinstance(data, dict):
             if columns is None:
                 columns = arr_columns = ensure_index(sorted(data))
@@ -1933,16 +1929,8 @@ class DataFrame(NDFrame, OpsMixin):
                         arrays[i] = lib.maybe_convert_objects(arr, try_float=True)
 
             arr_columns = ensure_index(arr_columns)
-            if columns is not None:
-                columns = ensure_index(columns)
-            else:
-                columns = arr_columns
-
-        if exclude is None:
-            exclude = set()
-        else:
-            exclude = set(exclude)
-
+            columns = ensure_index(columns) if columns is not None else arr_columns
+        exclude = set() if exclude is None else set(exclude)
         result_index = None
         if index is not None:
             if isinstance(index, str) or not hasattr(index, "__iter__"):
@@ -3333,41 +3321,41 @@ class DataFrame(NDFrame, OpsMixin):
     def _getitem_multilevel(self, key):
         # self.columns is a MultiIndex
         loc = self.columns.get_loc(key)
-        if isinstance(loc, (slice, np.ndarray)):
-            new_columns = self.columns[loc]
-            result_columns = maybe_droplevels(new_columns, key)
-            if self._is_mixed_type:
-                result = self.reindex(columns=new_columns)
-                result.columns = result_columns
-            else:
-                new_values = self.values[:, loc]
-                result = self._constructor(
-                    new_values, index=self.index, columns=result_columns
-                )
-                result = result.__finalize__(self)
-
-            # If there is only one column being returned, and its name is
-            # either an empty string, or a tuple with an empty string as its
-            # first element, then treat the empty string as a placeholder
-            # and return the column as if the user had provided that empty
-            # string in the key. If the result is a Series, exclude the
-            # implied empty string from its name.
-            if len(result.columns) == 1:
-                top = result.columns[0]
-                if isinstance(top, tuple):
-                    top = top[0]
-                if top == "":
-                    result = result[""]
-                    if isinstance(result, Series):
-                        result = self._constructor_sliced(
-                            result, index=self.index, name=key
-                        )
-
-            result._set_is_copy(self)
-            return result
-        else:
+        if not isinstance(loc, (slice, np.ndarray)):
             # loc is neither a slice nor ndarray, so must be an int
             return self._ixs(loc, axis=1)
+
+        new_columns = self.columns[loc]
+        result_columns = maybe_droplevels(new_columns, key)
+        if self._is_mixed_type:
+            result = self.reindex(columns=new_columns)
+            result.columns = result_columns
+        else:
+            new_values = self.values[:, loc]
+            result = self._constructor(
+                new_values, index=self.index, columns=result_columns
+            )
+            result = result.__finalize__(self)
+
+        # If there is only one column being returned, and its name is
+        # either an empty string, or a tuple with an empty string as its
+        # first element, then treat the empty string as a placeholder
+        # and return the column as if the user had provided that empty
+        # string in the key. If the result is a Series, exclude the
+        # implied empty string from its name.
+        if len(result.columns) == 1:
+            top = result.columns[0]
+            if isinstance(top, tuple):
+                top = top[0]
+            if top == "":
+                result = result[""]
+                if isinstance(result, Series):
+                    result = self._constructor_sliced(
+                        result, index=self.index, name=key
+                    )
+
+        result._set_is_copy(self)
+        return result
 
     def _get_value(self, index, col, takeable: bool = False):
         """
@@ -4033,7 +4021,7 @@ class DataFrame(NDFrame, OpsMixin):
         def extract_unique_dtypes_from_dtypes_set(
             dtypes_set: FrozenSet[Dtype], unique_dtypes: np.ndarray
         ) -> List[Dtype]:
-            extracted_dtypes = [
+            return [
                 unique_dtype
                 for unique_dtype in unique_dtypes
                 if (
@@ -4046,7 +4034,6 @@ class DataFrame(NDFrame, OpsMixin):
                     )
                 )
             ]
-            return extracted_dtypes
 
         unique_dtypes = self.dtypes.unique()
 
@@ -4369,16 +4356,16 @@ class DataFrame(NDFrame, OpsMixin):
         new_index, row_indexer = self.index.reindex(axes["index"])
         new_columns, col_indexer = self.columns.reindex(axes["columns"])
 
-        if row_indexer is not None and col_indexer is not None:
-            indexer = row_indexer, col_indexer
-            new_values = take_2d_multi(self.values, indexer, fill_value=fill_value)
-            return self._constructor(new_values, index=new_index, columns=new_columns)
-        else:
+        if row_indexer is None or col_indexer is None:
             return self._reindex_with_indexers(
                 {0: [new_index, row_indexer], 1: [new_columns, col_indexer]},
                 copy=copy,
                 fill_value=fill_value,
             )
+
+        indexer = row_indexer, col_indexer
+        new_values = take_2d_multi(self.values, indexer, fill_value=fill_value)
+        return self._constructor(new_values, index=new_index, columns=new_columns)
 
     @doc(NDFrame.align, **_shared_doc_kwargs)
     def align(
@@ -4879,14 +4866,14 @@ class DataFrame(NDFrame, OpsMixin):
 
             if periods > 0:
                 result = self.iloc[:, :-periods]
-                for col in range(min(ncols, abs(periods))):
+                for _ in range(min(ncols, abs(periods))):
                     # TODO(EA2D): doing this in a loop unnecessary with 2D EAs
                     # Define filler inside loop so we get a copy
                     filler = self.iloc[:, 0].shift(len(self))
                     result.insert(0, label, filler, allow_duplicates=True)
             else:
                 result = self.iloc[:, -periods:]
-                for col in range(min(ncols, abs(periods))):
+                for _ in range(min(ncols, abs(periods))):
                     # Define filler inside loop so we get a copy
                     filler = self.iloc[:, -1].shift(len(self))
                     result.insert(
@@ -5030,11 +5017,7 @@ class DataFrame(NDFrame, OpsMixin):
         if missing:
             raise KeyError(f"None of {missing} are in the columns")
 
-        if inplace:
-            frame = self
-        else:
-            frame = self.copy()
-
+        frame = self if inplace else self.copy()
         arrays = []
         names: List[Hashable] = []
         if append:
@@ -5272,11 +5255,7 @@ class DataFrame(NDFrame, OpsMixin):
         """
         inplace = validate_bool_kwarg(inplace, "inplace")
         self._check_inplace_and_allows_duplicate_labels(inplace)
-        if inplace:
-            new_obj = self
-        else:
-            new_obj = self.copy()
-
+        new_obj = self if inplace else self.copy()
         new_index = ibase.default_index(len(new_obj))
         if level is not None:
             if not isinstance(level, (tuple, list)):
@@ -5598,11 +5577,11 @@ class DataFrame(NDFrame, OpsMixin):
         if ignore_index:
             result.index = ibase.default_index(len(result))
 
-        if inplace:
-            self._update_inplace(result)
-            return None
-        else:
+        if not inplace:
             return result
+
+        self._update_inplace(result)
+        return None
 
     def duplicated(
         self,
@@ -6930,11 +6909,7 @@ Keep all original rows and columns and also all original values
                     if any(mask_this & mask_that):
                         raise ValueError("Data overlaps.")
 
-                if overwrite:
-                    mask = isna(that)
-                else:
-                    mask = notna(this)
-
+                mask = isna(that) if overwrite else notna(this)
             # don't overwrite columns unnecessarily
             if mask.all():
                 continue
@@ -9074,11 +9049,7 @@ NaN 12.3   33.0
         if level is not None:
             return self._count_level(level, axis=axis, numeric_only=numeric_only)
 
-        if numeric_only:
-            frame = self._get_numeric_data()
-        else:
-            frame = self
-
+        frame = self._get_numeric_data() if numeric_only else self
         # GH #423
         if len(frame._get_axis(axis)) == 0:
             result = self._constructor_sliced(0, index=frame._get_agg_axis(axis))
@@ -9098,11 +9069,7 @@ NaN 12.3   33.0
         return result.astype("int64")
 
     def _count_level(self, level: Level, axis: Axis = 0, numeric_only=False):
-        if numeric_only:
-            frame = self._get_numeric_data()
-        else:
-            frame = self
-
+        frame = self._get_numeric_data() if numeric_only else self
         count_axis = frame._get_axis(axis)
         agg_axis = frame._get_agg_axis(axis)
 
@@ -9136,11 +9103,9 @@ NaN 12.3   33.0
         counts = lib.count_level_2d(mask, level_codes, len(level_index), axis=axis)
 
         if axis == 1:
-            result = self._constructor(counts, index=agg_axis, columns=level_index)
+            return self._constructor(counts, index=agg_axis, columns=level_index)
         else:
-            result = self._constructor(counts, index=level_index, columns=agg_axis)
-
-        return result
+            return self._constructor(counts, index=level_index, columns=agg_axis)
 
     def _reduce(
         self,
@@ -9191,12 +9156,10 @@ NaN 12.3   33.0
 
         def _get_data() -> DataFrame:
             if filter_type is None:
-                data = self._get_numeric_data()
-            else:
-                # GH#25101, GH#24434
-                assert filter_type == "bool"
-                data = self._get_bool_data()
-            return data
+                return self._get_numeric_data()
+            # GH#25101, GH#24434
+            assert filter_type == "bool"
+            return self._get_bool_data()
 
         if numeric_only is not None or axis == 0:
             # For numeric_only non-None and axis non-None, we know

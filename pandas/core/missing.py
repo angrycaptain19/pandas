@@ -266,10 +266,10 @@ def interpolate_1d(
 
     # set preserve_nans based on direction using _interp_limit
     preserve_nans: Union[List, Set]
-    if limit_direction == "forward":
-        preserve_nans = start_nans | set(_interp_limit(invalid, limit, 0))
-    elif limit_direction == "backward":
+    if limit_direction == "backward":
         preserve_nans = end_nans | set(_interp_limit(invalid, 0, limit))
+    elif limit_direction == "forward":
+        preserve_nans = start_nans | set(_interp_limit(invalid, limit, 0))
     else:
         # both directions... just use _interp_limit
         preserve_nans = set(_interp_limit(invalid, limit, limit))
@@ -299,9 +299,8 @@ def interpolate_1d(
     else:
         inds = np.asarray(xarr)
 
-        if method in ("values", "index"):
-            if inds.dtype == np.object_:
-                inds = lib.maybe_convert_objects(inds)
+        if method in ("values", "index") and inds.dtype == np.object_:
+            inds = lib.maybe_convert_objects(inds)
 
     if method in NP_METHODS:
         # np.interp requires sorted X values, #21037
@@ -351,13 +350,13 @@ def _interpolate_scipy_wrapper(
         # GH 5975, scipy.interp1d can't handle datetime64s
         x, new_x = x._values.astype("i8"), new_x.astype("i8")
 
-    if method == "pchip":
-        alt_methods["pchip"] = interpolate.pchip_interpolate
-    elif method == "akima":
+    if method == "akima":
         alt_methods["akima"] = _akima_interpolate
     elif method == "cubicspline":
         alt_methods["cubicspline"] = _cubicspline_interpolate
 
+    elif method == "pchip":
+        alt_methods["pchip"] = interpolate.pchip_interpolate
     interp1d_methods = [
         "nearest",
         "zero",
@@ -372,7 +371,7 @@ def _interpolate_scipy_wrapper(
         terp = interpolate.interp1d(
             x, y, kind=method, fill_value=fill_value, bounds_error=bounds_error
         )
-        new_y = terp(new_x)
+        return terp(new_x)
     elif method == "spline":
         # GH #10633, #24014
         if isna(order) or (order <= 0):
@@ -380,7 +379,7 @@ def _interpolate_scipy_wrapper(
                 f"order needs to be specified and greater than 0; got order: {order}"
             )
         terp = interpolate.UnivariateSpline(x, y, k=order, **kwargs)
-        new_y = terp(new_x)
+        return terp(new_x)
     else:
         # GH 7295: need to be able to write for some reason
         # in some circumstances: check all three
@@ -391,8 +390,7 @@ def _interpolate_scipy_wrapper(
         if not new_x.flags.writeable:
             new_x = new_x.copy()
         method = alt_methods[method]
-        new_y = method(x, y, new_x, **kwargs)
-    return new_y
+        return method(x, y, new_x, **kwargs)
 
 
 def _from_derivatives(xi, yi, x, order=None, der=0, extrapolate=False):
@@ -794,10 +792,9 @@ def _interp_limit(invalid, fw_limit, bw_limit):
     def inner(invalid, limit):
         limit = min(limit, N)
         windowed = _rolling_window(invalid, limit + 1).all(1)
-        idx = set(np.where(windowed)[0] + limit) | set(
+        return set(np.where(windowed)[0] + limit) | set(
             np.where((~invalid[: limit + 1]).cumsum() == 0)[0]
         )
-        return idx
 
     if fw_limit is not None:
 

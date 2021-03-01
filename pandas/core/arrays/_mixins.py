@@ -297,9 +297,8 @@ class NDArrayBackedExtensionArray(ExtensionArray):
         meth = getattr(self, name, None)
         if meth:
             return meth(skipna=skipna, **kwargs)
-        else:
-            msg = f"'{type(self).__name__}' does not implement reduction '{name}'"
-            raise TypeError(msg)
+        msg = f"'{type(self).__name__}' does not implement reduction '{name}'"
+        raise TypeError(msg)
 
     def _wrap_reduction_result(self, axis: Optional[int], result):
         if axis is None or self.ndim == 1:
@@ -407,11 +406,7 @@ class NDArrayBackedExtensionArray(ExtensionArray):
             Series,
         )
 
-        if dropna:
-            values = self[~self.isna()]._ndarray
-        else:
-            values = self._ndarray
-
+        values = self[~self.isna()]._ndarray if dropna else self._ndarray
         result = value_counts(values, sort=False, dropna=dropna)
 
         index_arr = self._from_backing_data(np.asarray(result.index._data))

@@ -84,8 +84,7 @@ _shared_doc_kwargs = {
 def _field_accessor(name: str, docstring=None):
     def f(self):
         base = self.freq._period_dtype_code
-        result = get_period_field_arr(name, self.asi8, base)
-        return result
+        return get_period_field_arr(name, self.asi8, base)
 
     f.__name__ = name
     f.__doc__ = docstring
@@ -576,11 +575,7 @@ class PeriodArray(PeriodMixin, dtl.DatelikeOps):
         asi8 = self.asi8
         # self.freq.n can't be negative or 0
         end = how == "E"
-        if end:
-            ordinal = asi8 + self.freq.n - 1
-        else:
-            ordinal = asi8
-
+        ordinal = asi8 + self.freq.n - 1 if end else asi8
         new_data = period_asfreq_arr(ordinal, base1, base2, end)
 
         if self._hasnans:
@@ -924,11 +919,7 @@ def period_array(
     arrdata = np.asarray(data)
 
     dtype: Optional[PeriodDtype]
-    if freq:
-        dtype = PeriodDtype(freq)
-    else:
-        dtype = None
-
+    dtype = PeriodDtype(freq) if freq else None
     if is_float_dtype(arrdata) and len(arrdata) > 0:
         raise TypeError("PeriodIndex does not allow floating point in construction")
 

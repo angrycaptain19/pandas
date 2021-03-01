@@ -484,10 +484,9 @@ class SeriesGroupBy(GroupBy[Series]):
 
         def _get_index() -> Index:
             if self.grouper.nkeys > 1:
-                index = MultiIndex.from_tuples(keys, names=self.grouper.names)
+                return MultiIndex.from_tuples(keys, names=self.grouper.names)
             else:
-                index = Index(keys, name=self.grouper.names[0])
-            return index
+                return Index(keys, name=self.grouper.names[0])
 
         if isinstance(values[0], dict):
             # GH #823 #24880
@@ -1160,9 +1159,8 @@ class DataFrameGroupBy(GroupBy[DataFrame]):
                 # about a single block input returning a single block output
                 # is a lie. See eg GH-39329
                 return mgr.as_array()
-            else:
-                result = mgr.blocks[0].values
-                return result
+            result = mgr.blocks[0].values
+            return result
 
         def array_func(values: ArrayLike) -> ArrayLike:
 
@@ -1277,10 +1275,9 @@ class DataFrameGroupBy(GroupBy[DataFrame]):
             # of columns
             if self.as_index:
                 return self.obj._constructor_sliced(values, index=key_index)
-            else:
-                result = DataFrame(values, index=key_index, columns=[self._selection])
-                self._insert_inaxis_grouper_inplace(result)
-                return result
+            result = DataFrame(values, index=key_index, columns=[self._selection])
+            self._insert_inaxis_grouper_inplace(result)
+            return result
         else:
             # values are Series
             return self._wrap_applied_output_series(
@@ -1894,11 +1891,7 @@ class DataFrameGroupBy(GroupBy[DataFrame]):
         obj = self._obj_with_exclusions
         axis_number = obj._get_axis_number(self.axis)
         other_axis = int(not axis_number)
-        if axis_number == 0:
-            iter_func = obj.items
-        else:
-            iter_func = obj.iterrows
-
+        iter_func = obj.items if axis_number == 0 else obj.iterrows
         results = concat(
             [
                 SeriesGroupBy(content, selection=label, grouper=self.grouper).nunique(

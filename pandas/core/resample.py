@@ -934,10 +934,7 @@ class Resampler(BaseGroupBy, ShallowMixin):
         if not len(self.ax):
             from pandas import Series
 
-            if self._selected_obj.ndim == 1:
-                name = self._selected_obj.name
-            else:
-                name = None
+            name = self._selected_obj.name if self._selected_obj.ndim == 1 else None
             result = Series([], index=result.index, dtype="int64", name=name)
         return result
 
@@ -1126,10 +1123,7 @@ class DatetimeIndexResampler(Resampler):
 
         The range of a new index should not be outside specified range
         """
-        if self.closed == "right":
-            binner = binner[1:]
-        else:
-            binner = binner[:-1]
+        binner = binner[1:] if self.closed == "right" else binner[:-1]
         return binner
 
     def _upsample(self, method, limit=None, fill_value=None):

@@ -259,14 +259,13 @@ def _sanitize_and_check(indexes):
     kinds = list({type(index) for index in indexes})
 
     if list in kinds:
-        if len(kinds) > 1:
-            indexes = [
-                Index(list(x)) if not isinstance(x, Index) else x for x in indexes
-            ]
-            kinds.remove(list)
-        else:
+        if len(kinds) <= 1:
             return indexes, "list"
 
+        indexes = [
+            Index(list(x)) if not isinstance(x, Index) else x for x in indexes
+        ]
+        kinds.remove(list)
     if len(kinds) > 1 or Index not in kinds:
         return indexes, "special"
     else:

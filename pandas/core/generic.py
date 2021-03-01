@@ -242,10 +242,7 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
         object.__setattr__(self, "_is_copy", None)
         object.__setattr__(self, "_mgr", data)
         object.__setattr__(self, "_item_cache", {})
-        if attrs is None:
-            attrs = {}
-        else:
-            attrs = dict(attrs)
+        attrs = {} if attrs is None else dict(attrs)
         object.__setattr__(self, "_attrs", attrs)
         object.__setattr__(self, "_flags", Flags(self, allows_duplicate_labels=True))
 
@@ -1095,11 +1092,11 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
             result._set_axis_nocheck(new_index, axis=axis_no, inplace=True)
             result._clear_item_cache()
 
-        if inplace:
-            self._update_inplace(result)
-            return None
-        else:
+        if not inplace:
             return result.__finalize__(self, method="rename")
+
+        self._update_inplace(result)
+        return None
 
     @rewrite_axis_style_signature("mapper", [("copy", True), ("inplace", False)])
     def rename_axis(self, mapper=lib.no_default, **kwargs):
@@ -2003,28 +2000,27 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
                 # compat for older pickles
                 state["_mgr"] = state.pop("_data")
             typ = state.get("_typ")
-            if typ is not None:
-                attrs = state.get("_attrs", {})
-                object.__setattr__(self, "_attrs", attrs)
-                flags = state.get("_flags", {"allows_duplicate_labels": True})
-                object.__setattr__(self, "_flags", Flags(self, **flags))
-
-                # set in the order of internal names
-                # to avoid definitional recursion
-                # e.g. say fill_value needing _mgr to be
-                # defined
-                meta = set(self._internal_names + self._metadata)
-                for k in list(meta):
-                    if k in state and k != "_flags":
-                        v = state[k]
-                        object.__setattr__(self, k, v)
-
-                for k, v in state.items():
-                    if k not in meta:
-                        object.__setattr__(self, k, v)
-
-            else:
+            if typ is None:
                 raise NotImplementedError("Pre-0.12 pickles are no longer supported")
+            attrs = state.get("_attrs", {})
+            object.__setattr__(self, "_attrs", attrs)
+            flags = state.get("_flags", {"allows_duplicate_labels": True})
+            object.__setattr__(self, "_flags", Flags(self, **flags))
+
+            # set in the order of internal names
+            # to avoid definitional recursion
+            # e.g. say fill_value needing _mgr to be
+            # defined
+            meta = set(self._internal_names + self._metadata)
+            for k in list(meta):
+                if k in state and k != "_flags":
+                    v = state[k]
+                    object.__setattr__(self, k, v)
+
+            for k, v in state.items():
+                if k not in meta:
+                    object.__setattr__(self, k, v)
+
         elif len(state) == 2:
             raise NotImplementedError("Pre-0.12 pickles are no longer supported")
 
@@ -2490,11 +2486,8 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
         """
         from pandas.io import json
 
-        if date_format is None and orient == "table":
-            date_format = "iso"
-        elif date_format is None:
-            date_format = "epoch"
-
+        if date_format is None:
+            date_format = "iso" if orient == "table" else "epoch"
         config.is_nonnegative_int(indent)
         indent = indent or 0
 
@@ -3779,12 +3772,11 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
             loc = index.get_loc(key)
 
             if isinstance(loc, np.ndarray):
-                if loc.dtype == np.bool_:
-                    (inds,) = loc.nonzero()
-                    return self._take_with_is_copy(inds, axis=axis)
-                else:
+                if loc.dtype != np.bool_:
                     return self._take_with_is_copy(loc, axis=axis)
 
+                (inds,) = loc.nonzero()
+                return self._take_with_is_copy(inds, axis=axis)
             if not is_scalar(loc):
                 new_index = index[loc]
 
@@ -5370,7 +5362,7 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
             )
         elif frac is None and n % 1 != 0:
             raise ValueError("Only integers accepted as `n` values")
-        elif n is None and frac is not None:
+        elif n is None:
             n = round(frac * axis_length)
         elif frac is not None:
             raise ValueError("Please enter a value for `frac` OR `n`, not both")
@@ -5518,19 +5510,15 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
 
         # if this fails, go on to more involved attribute setting
         # (note that this matches __getattr__, above).
-        if name in self._internal_names_set:
-            object.__setattr__(self, name, value)
-        elif name in self._metadata:
+        if name in self._internal_names_set or name in self._metadata:
             object.__setattr__(self, name, value)
         else:
             try:
                 existing = getattr(self, name)
-                if isinstance(existing, Index):
+                if isinstance(existing, Index) or name not in self._info_axis:
                     object.__setattr__(self, name, value)
-                elif name in self._info_axis:
-                    self[name] = value
                 else:
-                    object.__setattr__(self, name, value)
+                    self[name] = value
             except (AttributeError, TypeError):
                 if isinstance(self, ABCDataFrame) and (is_list_like(value)):
                     warnings.warn(
@@ -6277,18 +6265,17 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
                 convert_boolean,
                 convert_floating,
             )
-        else:
-            results = [
-                col._convert_dtypes(
-                    infer_objects,
-                    convert_string,
-                    convert_integer,
-                    convert_boolean,
-                    convert_floating,
-                )
-                for col_name, col in self.items()
-            ]
-            return concat(results, axis=1, copy=False)
+        results = [
+            col._convert_dtypes(
+                infer_objects,
+                convert_string,
+                convert_integer,
+                convert_boolean,
+                convert_floating,
+            )
+            for col_name, col in self.items()
+        ]
+        return concat(results, axis=1, copy=False)
 
     # ----------------------------------------------------------------------
     # Filling NA's
@@ -6448,9 +6435,7 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
                     )
                     value = value.reindex(self.index, copy=False)
                     value = value._values
-                elif not is_list_like(value):
-                    pass
-                else:
+                elif is_list_like(value):
                     raise TypeError(
                         '"value" parameter must be a scalar, dict '
                         "or Series, but you passed a "
@@ -6596,11 +6581,7 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
                 regex = True
 
             items = list(to_replace.items())
-            if items:
-                keys, values = zip(*items)
-            else:
-                keys, values = ([], [])
-
+            keys, values = zip(*items) if items else ([], [])
             are_mappings = [is_dict_like(v) for v in values]
 
             if any(are_mappings):
@@ -8722,15 +8703,17 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
             right = right.fillna(method=method, axis=fill_axis, limit=limit)
 
         # if DatetimeIndex have different tz, convert to UTC
-        if is_datetime64tz_dtype(left.index.dtype):
-            if left.index.tz != right.index.tz:
-                if join_index is not None:
-                    # GH#33671 ensure we don't change the index on
-                    #  our original Series (NB: by default deep=False)
-                    left = left.copy()
-                    right = right.copy()
-                    left.index = join_index
-                    right.index = join_index
+        if (
+            is_datetime64tz_dtype(left.index.dtype)
+            and left.index.tz != right.index.tz
+            and join_index is not None
+        ):
+            # GH#33671 ensure we don't change the index on
+            #  our original Series (NB: by default deep=False)
+            left = left.copy()
+            right = right.copy()
+            left.index = join_index
+            right.index = join_index
 
         return (
             left.__finalize__(self),
@@ -8801,11 +8784,7 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
 
             left = self._constructor(fdata)
 
-            if ridx is None:
-                right = other
-            else:
-                right = other.reindex(join_index, level=level)
-
+            right = other if ridx is None else other.reindex(join_index, level=level)
         # fill
         fill_na = notna(fill_value) or (method is not None)
         if fill_na:
@@ -8813,16 +8792,18 @@ class NDFrame(PandasObject, SelectionMixin, indexing.IndexingMixin):
             right = right.fillna(fill_value, method=method, limit=limit)
 
         # if DatetimeIndex have different tz, convert to UTC
-        if is_series or (not is_series and axis == 0):
-            if is_datetime64tz_dtype(left.index.dtype):
-                if left.index.tz != right.index.tz:
-                    if join_index is not None:
-                        # GH#33671 ensure we don't change the index on
-                        #  our original Series (NB: by default deep=False)
-                        left = left.copy()
-                        right = right.copy()
-                        left.index = join_index
-                        right.index = join_index
+        if (
+            (is_series or axis == 0)
+            and is_datetime64tz_dtype(left.index.dtype)
+            and left.index.tz != right.index.tz
+            and join_index is not None
+        ):
+            # GH#33671 ensure we don't change the index on
+            #  our original Series (NB: by default deep=False)
+            left = left.copy()
+            right = right.copy()
+            left.index = join_index
+            right.index = join_index
 
         return (
             left.__finalize__(self),

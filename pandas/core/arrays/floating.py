@@ -104,9 +104,12 @@ def coerce_to_array(
     tuple of (values, mask)
     """
     # if values is floating numpy array, preserve its dtype
-    if dtype is None and hasattr(values, "dtype"):
-        if is_float_dtype(values.dtype):
-            dtype = values.dtype
+    if (
+        dtype is None
+        and hasattr(values, "dtype")
+        and is_float_dtype(values.dtype)
+    ):
+        dtype = values.dtype
 
     if dtype is not None:
         if isinstance(dtype, str) and dtype.startswith("Float"):
@@ -156,17 +159,13 @@ def coerce_to_array(
     else:
         assert len(mask) == len(values)
 
-    if not values.ndim == 1:
+    if values.ndim != 1:
         raise TypeError("values must be a 1D list-like")
-    if not mask.ndim == 1:
+    if mask.ndim != 1:
         raise TypeError("mask must be a 1D list-like")
 
     # infer dtype if needed
-    if dtype is None:
-        dtype = np.dtype("float64")
-    else:
-        dtype = dtype.type
-
+    dtype = np.dtype("float64") if dtype is None else dtype.type
     # if we are float, let's make sure that we can
     # safely cast
 
@@ -175,10 +174,7 @@ def coerce_to_array(
     if mask.any():
         values = values.copy()
         values[mask] = np.nan
-        values = values.astype(dtype, copy=False)  # , casting="safe")
-    else:
-        values = values.astype(dtype, copy=False)  # , casting="safe")
-
+    values = values.astype(dtype, copy=False)  # , casting="safe")
     return values, mask
 
 
@@ -358,11 +354,7 @@ class FloatingArray(NumericArray):
                     result = invalid_comparison(self._data, other, op)
 
         # nans propagate
-        if mask is None:
-            mask = self._mask.copy()
-        else:
-            mask = self._mask | mask
-
+        mask = self._mask.copy() if mask is None else self._mask | mask
         return BooleanArray(result, mask)
 
     def sum(self, *, skipna=True, min_count=0, **kwargs):

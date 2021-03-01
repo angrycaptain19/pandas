@@ -661,9 +661,7 @@ class _LocationIndexer(NDFrameIndexerBase):
         except TypeError as e:
 
             # invalid indexer type vs 'other' indexing errors
-            if "cannot do" in str(e):
-                raise
-            elif "unhashable type" in str(e):
+            if "cannot do" in str(e) or "unhashable type" in str(e):
                 raise
             raise IndexingError(key) from e
 
@@ -1238,13 +1236,12 @@ class _LocIndexer(_LocationIndexer):
 
         elif is_list_like_indexer(key):
 
-            if com.is_bool_indexer(key):
-                key = check_bool_indexer(labels, key)
-                (inds,) = key.nonzero()
-                return inds
-            else:
+            if not com.is_bool_indexer(key):
                 # When setting, missing keys are not allowed, even with .loc:
                 return self._get_listlike_indexer(key, axis, raise_missing=True)[1]
+            key = check_bool_indexer(labels, key)
+            (inds,) = key.nonzero()
+            return inds
         else:
             try:
                 return labels.get_loc(key)
@@ -1962,16 +1959,15 @@ class _iLocIndexer(_LocationIndexer):
         Ensure that our column indexer is something that can be iterated over.
         """
         if is_integer(column_indexer):
-            ilocs = [column_indexer]
+            return [column_indexer]
         elif isinstance(column_indexer, slice):
-            ilocs = np.arange(len(self.obj.columns))[column_indexer]
+            return np.arange(len(self.obj.columns))[column_indexer]
         elif isinstance(column_indexer, np.ndarray) and is_bool_dtype(
             column_indexer.dtype
         ):
-            ilocs = np.arange(len(column_indexer))[column_indexer]
+            return np.arange(len(column_indexer))[column_indexer]
         else:
-            ilocs = column_indexer
-        return ilocs
+            return column_indexer
 
     def _align_series(self, indexer, ser: Series, multiindex_indexer: bool = False):
         """
@@ -2098,32 +2094,26 @@ class _iLocIndexer(_LocationIndexer):
             if idx is not None and cols is not None:
 
                 if df.index.equals(idx) and df.columns.equals(cols):
-                    val = df.copy()._values
+                    return df.copy()._values
                 else:
-                    val = df.reindex(idx, columns=cols)._values
-                return val
-
+                    return df.reindex(idx, columns=cols)._values
         elif (isinstance(indexer, slice) or is_list_like_indexer(indexer)) and is_frame:
             ax = self.obj.index[indexer]
             if df.index.equals(ax):
-                val = df.copy()._values
-            else:
+                return df.copy()._values
+            # we have a multi-index and are trying to align
+            # with a particular, level GH3738
+            if (
+                isinstance(ax, ABCMultiIndex)
+                and isinstance(df.index, ABCMultiIndex)
+                and ax.nlevels != df.index.nlevels
+            ):
+                raise TypeError(
+                    "cannot align on a multi-index with out "
+                    "specifying the join levels"
+                )
 
-                # we have a multi-index and are trying to align
-                # with a particular, level GH3738
-                if (
-                    isinstance(ax, ABCMultiIndex)
-                    and isinstance(df.index, ABCMultiIndex)
-                    and ax.nlevels != df.index.nlevels
-                ):
-                    raise TypeError(
-                        "cannot align on a multi-index with out "
-                        "specifying the join levels"
-                    )
-
-                val = df.reindex(index=ax)._values
-            return val
-
+            return df.reindex(index=ax)._values
         raise ValueError("Incompatible indexer with DataFrame")
 
 

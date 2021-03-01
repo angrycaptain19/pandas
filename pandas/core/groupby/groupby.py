@@ -710,12 +710,12 @@ class BaseGroupBy(PandasObject, SelectionMixin, Generic[FrameOrSeries]):
     def _selected_obj(self):
         # Note: _selected_obj is always just `self.obj` for SeriesGroupBy
 
-        if self._selection is None or isinstance(self.obj, Series):
-            if self._group_selection is not None:
-                return self.obj[self._group_selection]
-            return self.obj
-        else:
+        if self._selection is not None and not isinstance(self.obj, Series):
             return self.obj[self._selection]
+
+        if self._group_selection is not None:
+            return self.obj[self._group_selection]
+        return self.obj
 
     @final
     def _reset_group_selection(self) -> None:
@@ -1633,10 +1633,9 @@ class GroupBy(BaseGroupBy[FrameOrSeries]):
             return self._cython_agg_general(
                 "var", alt=lambda x, axis: Series(x).var(ddof=ddof)
             )
-        else:
-            func = lambda x: x.var(ddof=ddof)
-            with group_selection_context(self):
-                return self._python_agg_general(func)
+        func = lambda x: x.var(ddof=ddof)
+        with group_selection_context(self):
+            return self._python_agg_general(func)
 
     @final
     @Substitution(name="groupby")
@@ -2693,11 +2692,7 @@ class GroupBy(BaseGroupBy[FrameOrSeries]):
             if numeric_only and not is_numeric_dtype(values):
                 continue
 
-            if aggregate:
-                result_sz = ngroups
-            else:
-                result_sz = len(values)
-
+            result_sz = ngroups if aggregate else len(values)
             result = np.zeros(result_sz, dtype=cython_dtype)
             if needs_2d:
                 result = result.reshape((-1, 1))

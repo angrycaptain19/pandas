@@ -127,27 +127,26 @@ def _cat_compare_op(op):
             # in hashable case we may have a tuple that is itself a category
             raise ValueError("Lengths must match.")
 
-        if not self.ordered:
-            if opname in ["__lt__", "__gt__", "__le__", "__ge__"]:
-                raise TypeError(
-                    "Unordered Categoricals can only compare equality or not"
-                )
+        if not self.ordered and opname in ["__lt__", "__gt__", "__le__", "__ge__"]:
+            raise TypeError(
+                "Unordered Categoricals can only compare equality or not"
+            )
         if isinstance(other, Categorical):
-            # Two Categoricals can only be compared if the categories are
-            # the same (maybe up to ordering, depending on ordered)
-
-            msg = "Categoricals can only be compared if 'categories' are the same."
             if not self._categories_match_up_to_permutation(other):
+                # Two Categoricals can only be compared if the categories are
+                # the same (maybe up to ordering, depending on ordered)
+
+                msg = "Categoricals can only be compared if 'categories' are the same."
                 raise TypeError(msg)
 
-            if not self.ordered and not self.categories.equals(other.categories):
+            if self.ordered or self.categories.equals(other.categories):
+                other_codes = other._codes
+
+            else:
                 # both unordered and different order
                 other_codes = recode_for_categories(
                     other.codes, other.categories, self.categories, copy=False
                 )
-            else:
-                other_codes = other._codes
-
             ret = op(self._codes, other_codes)
             mask = (self._codes == -1) | (other_codes == -1)
             if mask.any():
@@ -155,19 +154,18 @@ def _cat_compare_op(op):
             return ret
 
         if hashable:
-            if other in self.categories:
-                i = self._unbox_scalar(other)
-                ret = op(self._codes, i)
-
-                if opname not in {"__eq__", "__ge__", "__gt__"}:
-                    # GH#29820 performance trick; get_loc will always give i>=0,
-                    #  so in the cases (__ne__, __le__, __lt__) the setting
-                    #  here is a no-op, so can be skipped.
-                    mask = self._codes == -1
-                    ret[mask] = fill_value
-                return ret
-            else:
+            if other not in self.categories:
                 return ops.invalid_comparison(self, other, op)
+            i = self._unbox_scalar(other)
+            ret = op(self._codes, i)
+
+            if opname not in {"__eq__", "__ge__", "__gt__"}:
+                # GH#29820 performance trick; get_loc will always give i>=0,
+                #  so in the cases (__ne__, __le__, __lt__) the setting
+                #  here is a no-op, so can be skipped.
+                mask = self._codes == -1
+                ret[mask] = fill_value
+            return ret
         else:
             # allow categorical vs object dtype array comparisons for equality
             # these are only positional comparisons
@@ -1308,11 +1306,9 @@ class Categorical(NDArrayBackedExtensionArray, PandasObject, ObjectStringArrayMi
         # searchsorted is very performance sensitive. By converting codes
         # to same dtype as self.codes, we get much faster performance.
         if is_scalar(value):
-            codes = self._unbox_scalar(value)
-        else:
-            locs = [self.categories.get_loc(x) for x in value]
-            codes = np.array(locs, dtype=self.codes.dtype)
-        return codes
+            return self._unbox_scalar(value)
+        locs = [self.categories.get_loc(x) for x in value]
+        return np.array(locs, dtype=self.codes.dtype)
 
     def _validate_fill_value(self, fill_value):
         """
@@ -1935,14 +1931,12 @@ class Categorical(NDArrayBackedExtensionArray, PandasObject, ObjectStringArrayMi
         """
         _maxlen = 10
         if len(self._codes) > _maxlen:
-            result = self._tidy_repr(_maxlen)
+            return self._tidy_repr(_maxlen)
         elif len(self._codes) > 0:
-            result = self._get_repr(length=len(self) > _maxlen)
+            return self._get_repr(length=len(self) > _maxlen)
         else:
             msg = self._get_repr(length=False, footer=True).replace("\n", ", ")
-            result = f"[], {msg}"
-
-        return result
+            return f"[], {msg}"
 
     # ------------------------------------------------------------------
 

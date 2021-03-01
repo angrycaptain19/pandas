@@ -236,11 +236,7 @@ def _isna_ndarraylike(obj, inf_as_na: bool = False):
         # this is the NaT pattern
         result = values.view("i8") == iNaT
     else:
-        if inf_as_na:
-            result = ~np.isfinite(values)
-        else:
-            result = np.isnan(values)
-
+        result = ~np.isfinite(values) if inf_as_na else np.isnan(values)
     # box
     if isinstance(obj, ABCSeries):
         result = obj._constructor(result, index=obj.index, name=obj.name, copy=False)
@@ -492,10 +488,10 @@ def _array_equivalent_object(left, right, strict_nan):
                 if np.any(np.asarray(left_value != right_value)):
                     return False
             except TypeError as err:
-                if "Cannot compare tz-naive" in str(err):
+                if "Cannot compare tz-naive" in str(
+                    err
+                ) or "boolean value of NA is ambiguous" in str(err):
                     # tzawareness compat failure, see GH#28507
-                    return False
-                elif "boolean value of NA is ambiguous" in str(err):
                     return False
                 raise
     return True

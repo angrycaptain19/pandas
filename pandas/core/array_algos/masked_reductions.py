@@ -114,5 +114,4 @@ def mean(values: np.ndarray, mask: np.ndarray, skipna: bool = True):
         return libmissing.NA
     _sum = _sumprod(np.sum, values=values, mask=mask, skipna=skipna)
     count = np.count_nonzero(~mask)
-    mean_value = _sum / count
-    return mean_value
+    return _sum / count

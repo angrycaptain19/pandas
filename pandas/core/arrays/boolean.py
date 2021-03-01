@@ -649,11 +649,7 @@ class BooleanArray(BaseMaskedArray):
                     result = op(self._data, other)
 
             # nans propagate
-            if mask is None:
-                mask = self._mask.copy()
-            else:
-                mask = self._mask | mask
-
+            mask = self._mask.copy() if mask is None else self._mask | mask
         return BooleanArray(result, mask, copy=False)
 
     def _arith_method(self, other, op):

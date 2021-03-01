@@ -215,10 +215,9 @@ def _new_Index(cls, d):
 
         return _new_PeriodIndex(cls, **d)
 
-    if issubclass(cls, ABCMultiIndex):
-        if "labels" in d and "codes" not in d:
-            # GH#23752 "labels" kwarg has been replaced with "codes"
-            d["codes"] = d.pop("labels")
+    if issubclass(cls, ABCMultiIndex) and "labels" in d and "codes" not in d:
+        # GH#23752 "labels" kwarg has been replaced with "codes"
+        d["codes"] = d.pop("labels")
 
     return cls.__new__(cls, **d)
 
@@ -1585,11 +1584,7 @@ class Index(IndexOpsMixin, PandasObject):
         if level is not None and not is_list_like(level):
             level = [level]
 
-        if inplace:
-            idx = self
-        else:
-            idx = self._view()
-
+        idx = self if inplace else self._view()
         idx._set_names(names, level=level)
         if not inplace:
             return idx
@@ -1881,11 +1876,7 @@ class Index(IndexOpsMixin, PandasObject):
             Index of unique values for level.
         """
         assert level is None or level == 0
-        if mapper is None:
-            grouper = self
-        else:
-            grouper = self.map(mapper)
-
+        grouper = self if mapper is None else self.map(mapper)
         return grouper, None, None
 
     # --------------------------------------------------------------------
@@ -2382,11 +2373,10 @@ class Index(IndexOpsMixin, PandasObject):
         """
         if self._can_hold_na:
             return isna(self)
-        else:
-            # shouldn't reach to this condition by checking hasnans beforehand
-            values = np.empty(len(self), dtype=np.bool_)
-            values.fill(False)
-            return values
+        # shouldn't reach to this condition by checking hasnans beforehand
+        values = np.empty(len(self), dtype=np.bool_)
+        values.fill(False)
+        return values
 
     @cache_readonly
     def hasnans(self) -> bool:
@@ -2978,12 +2968,12 @@ class Index(IndexOpsMixin, PandasObject):
             result = Categorical(result, dtype=self.dtype)
 
         name = get_op_result_name(self, other)
-        if isinstance(result, Index):
-            if result.name != name:
-                return result.rename(name)
-            return result
-        else:
+        if not isinstance(result, Index):
             return self._shallow_copy(result, name=name)
+
+        if result.name != name:
+            return result.rename(name)
+        return result
 
     # TODO: standardize return type of non-union setops type(self vs other)
     @final
@@ -3644,9 +3634,7 @@ class Index(IndexOpsMixin, PandasObject):
         keyarr : numpy.ndarray
             Return tuple-safe keys.
         """
-        if isinstance(keyarr, Index):
-            pass
-        else:
+        if not isinstance(keyarr, Index):
             keyarr = self._convert_arr_indexer(keyarr)
 
         indexer = self._convert_list_indexer(keyarr)
@@ -4263,12 +4251,12 @@ class Index(IndexOpsMixin, PandasObject):
                 join_index, lidx, ridx = self._outer_indexer(sv, ov)
             join_index = self._wrap_joined_index(join_index, other)
 
-        if return_indexers:
-            lidx = None if lidx is None else ensure_platform_int(lidx)
-            ridx = None if ridx is None else ensure_platform_int(ridx)
-            return join_index, lidx, ridx
-        else:
+        if not return_indexers:
             return join_index
+
+        lidx = None if lidx is None else ensure_platform_int(lidx)
+        ridx = None if ridx is None else ensure_platform_int(ridx)
+        return join_index, lidx, ridx
 
     def _wrap_joined_index(
         self: _IndexT, joined: np.ndarray, other: _IndexT
@@ -4537,13 +4525,13 @@ class Index(IndexOpsMixin, PandasObject):
             key = np.asarray(key, dtype=bool)
 
         result = getitem(key)
-        if not is_scalar(result):
-            if np.ndim(result) > 1:
-                deprecate_ndim_indexing(result)
-                return result
-            return promote(result)
-        else:
+        if is_scalar(result):
             return result
+
+        if np.ndim(result) > 1:
+            deprecate_ndim_indexing(result)
+            return result
+        return promote(result)
 
     @final
     def _can_hold_identifiers_and_holds_name(self, name) -> bool:
@@ -5213,10 +5201,9 @@ class Index(IndexOpsMixin, PandasObject):
         if unique:
             # This is for get_indexer
             return no_matches
-        else:
-            # This is for get_indexer_non_unique
-            missing = np.arange(len(target), dtype=np.intp)
-            return no_matches, missing
+        # This is for get_indexer_non_unique
+        missing = np.arange(len(target), dtype=np.intp)
+        return no_matches, missing
 
     @property
     def _index_as_unique(self) -> bool:

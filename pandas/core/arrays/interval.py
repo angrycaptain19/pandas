@@ -1148,8 +1148,7 @@ class IntervalArray(IntervalMixin, ExtensionArray):
         data = self._format_data()
         class_name = f"<{type(self).__name__}>\n"
 
-        template = f"{class_name}{data}\nLength: {len(self)}, dtype: {self.dtype}"
-        return template
+        return f"{class_name}{data}\nLength: {len(self)}, dtype: {self.dtype}"
 
     def _format_space(self) -> str:
         space = " " * (len(type(self).__name__) + 1)
@@ -1389,10 +1388,7 @@ class IntervalArray(IntervalMixin, ExtensionArray):
 
         result = np.empty(len(left), dtype=object)
         for i in range(len(left)):
-            if mask[i]:
-                result[i] = np.nan
-            else:
-                result[i] = Interval(left[i], right[i], closed)
+            result[i] = np.nan if mask[i] else Interval(left[i], right[i], closed)
         return result
 
     def __arrow_array__(self, type=None):
@@ -1589,10 +1585,9 @@ class IntervalArray(IntervalMixin, ExtensionArray):
         left = self.left._values.reshape(-1, 1)
         right = self.right._values.reshape(-1, 1)
         if needs_i8_conversion(left.dtype):
-            comb = left._concat_same_type([left, right], axis=1)
+            return left._concat_same_type([left, right], axis=1)
         else:
-            comb = np.concatenate([left, right], axis=1)
-        return comb
+            return np.concatenate([left, right], axis=1)
 
 
 def _maybe_convert_platform_interval(values) -> ArrayLike:

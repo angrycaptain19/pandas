@@ -225,7 +225,7 @@ def decons_group_index(comp_labels, shape):
     x = comp_labels
     for i in reversed(range(len(shape))):
         labels = (x - y) % (factor * shape[i]) // factor
-        np.putmask(labels, comp_labels < 0, -1)
+        np.putmask(labels, x < 0, -1)
         label_list.append(labels)
         y = labels * factor
         factor *= shape[i]
@@ -454,11 +454,7 @@ def _ensure_key_mapped_multiindex(
     """
 
     if level is not None:
-        if isinstance(level, (str, int)):
-            sort_levels = [level]
-        else:
-            sort_levels = level
-
+        sort_levels = [level] if isinstance(level, (str, int)) else level
         sort_levels = [index._get_level_number(lev) for lev in sort_levels]
     else:
         sort_levels = list(range(index.nlevels))  # satisfies mypy
@@ -589,11 +585,11 @@ def get_group_index_sorter(
     alpha = 0.0  # taking complexities literally; there may be
     beta = 1.0  # some room for fine-tuning these parameters
     do_groupsort = count > 0 and ((alpha + beta * ngroups) < (count * np.log(count)))
-    if do_groupsort:
-        sorter, _ = algos.groupsort_indexer(ensure_int64(group_index), ngroups)
-        return ensure_platform_int(sorter)
-    else:
+    if not do_groupsort:
         return group_index.argsort(kind="mergesort")
+
+    sorter, _ = algos.groupsort_indexer(ensure_int64(group_index), ngroups)
+    return ensure_platform_int(sorter)
 
 
 def compress_group_index(group_index, sort: bool = True):

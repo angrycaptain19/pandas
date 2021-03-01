@@ -321,14 +321,18 @@ def _get_values(
         dtype, fill_value=fill_value, fill_value_typ=fill_value_typ
     )
 
-    if skipna and (mask is not None) and (fill_value is not None):
-        if mask.any():
-            if dtype_ok or datetimelike:
-                values = values.copy()
-                np.putmask(values, mask, fill_value)
-            else:
-                # np.where will promote if needed
-                values = np.where(~mask, values, fill_value)
+    if (
+        skipna
+        and (mask is not None)
+        and (fill_value is not None)
+        and mask.any()
+    ):
+        if dtype_ok or datetimelike:
+            values = values.copy()
+            np.putmask(values, mask, fill_value)
+        else:
+            # np.where will promote if needed
+            values = np.where(~mask, values, fill_value)
 
     # return a platform independent precision dtype
     dtype_max = dtype
@@ -439,14 +443,11 @@ def _na_for_min_count(
         values = values.astype("float64")
     fill_value = na_value_for_dtype(values.dtype)
 
-    if values.ndim == 1:
+    if values.ndim == 1 or axis is None:
         return fill_value
-    elif axis is None:
-        return fill_value
-    else:
-        result_shape = values.shape[:axis] + values.shape[axis + 1 :]
+    result_shape = values.shape[:axis] + values.shape[axis + 1 :]
 
-        return np.full(result_shape, fill_value, dtype=values.dtype)
+    return np.full(result_shape, fill_value, dtype=values.dtype)
 
 
 def nanany(
@@ -1313,17 +1314,10 @@ def _maybe_arg_null_out(
         return result
 
     if axis is None or not getattr(result, "ndim", False):
-        if skipna:
-            if mask.all():
-                result = -1
-        else:
-            if mask.any():
-                result = -1
+        if skipna and mask.all() or not skipna and mask.any():
+            result = -1
     else:
-        if skipna:
-            na_mask = mask.all(axis)
-        else:
-            na_mask = mask.any(axis)
+        na_mask = mask.all(axis) if skipna else mask.any(axis)
         if na_mask.any():
             result[na_mask] = -1
     return result
@@ -1355,10 +1349,7 @@ def _get_counts(
     """
     dtype = get_dtype(dtype)
     if axis is None:
-        if mask is not None:
-            n = mask.size - mask.sum()
-        else:
-            n = np.prod(values_shape)
+        n = mask.size - mask.sum() if mask is not None else np.prod(values_shape)
         return dtype.type(n)
 
     if mask is not None:
@@ -1663,26 +1654,25 @@ def nanpercentile(
         #  have float result at this point, not i8
         return result.astype(values.dtype)
 
-    if not lib.is_scalar(mask) and mask.any():
-        if ndim == 1:
-            return _nanpercentile_1d(
-                values, mask, q, na_value, interpolation=interpolation
-            )
-        else:
-            # for nonconsolidatable blocks mask is 1D, but values 2D
-            if mask.ndim < values.ndim:
-                mask = mask.reshape(values.shape)
-            if axis == 0:
-                values = values.T
-                mask = mask.T
-            result = [
-                _nanpercentile_1d(val, m, q, na_value, interpolation=interpolation)
-                for (val, m) in zip(list(values), list(mask))
-            ]
-            result = np.array(result, dtype=values.dtype, copy=False).T
-            return result
-    else:
+    if lib.is_scalar(mask) or not mask.any():
         return np.percentile(values, q, axis=axis, interpolation=interpolation)
+
+    if ndim == 1:
+        return _nanpercentile_1d(
+            values, mask, q, na_value, interpolation=interpolation
+        )
+    # for nonconsolidatable blocks mask is 1D, but values 2D
+    if mask.ndim < values.ndim:
+        mask = mask.reshape(values.shape)
+    if axis == 0:
+        values = values.T
+        mask = mask.T
+    result = [
+        _nanpercentile_1d(val, m, q, na_value, interpolation=interpolation)
+        for (val, m) in zip(list(values), list(mask))
+    ]
+    result = np.array(result, dtype=values.dtype, copy=False).T
+    return result
 
 
 def na_accum_func(values: ArrayLike, accum_func, *, skipna: bool) -> ArrayLike:

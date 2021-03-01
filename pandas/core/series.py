@@ -1300,14 +1300,13 @@ class Series(base.IndexOpsMixin, generic.NDFrame):
                 if len(level) < self.index.nlevels:
                     new_index = self.index.droplevel(level)
 
-            if inplace:
-                self.index = new_index
-                # set name if it was passed, otherwise, keep the previous name
-                self.name = name or self.name
-            else:
+            if not inplace:
                 return self._constructor(
                     self._values.copy(), index=new_index
                 ).__finalize__(self, method="reset_index")
+            self.index = new_index
+            # set name if it was passed, otherwise, keep the previous name
+            self.name = name or self.name
         elif inplace:
             raise TypeError(
                 "Cannot reset_index inplace on a Series to create a DataFrame"
@@ -1620,11 +1619,9 @@ class Series(base.IndexOpsMixin, generic.NDFrame):
         2    c
         """
         if name is None:
-            df = self._constructor_expanddim(self)
+            return self._constructor_expanddim(self)
         else:
-            df = self._constructor_expanddim({name: self})
-
-        return df
+            return self._constructor_expanddim({name: self})
 
     def _set_name(self, name, inplace=False) -> Series:
         """
@@ -1985,11 +1982,11 @@ Name: Max Speed, dtype: float64
         """
         inplace = validate_bool_kwarg(inplace, "inplace")
         result = super().drop_duplicates(keep=keep)
-        if inplace:
-            self._update_inplace(result)
-            return None
-        else:
+        if not inplace:
             return result
+
+        self._update_inplace(result)
+        return None
 
     def duplicated(self, keep="first") -> Series:
         """
@@ -2619,9 +2616,7 @@ Name: Max Speed, dtype: float64
             return self._constructor(
                 np.dot(lvals, rvals), index=other.columns
             ).__finalize__(self, method="dot")
-        elif isinstance(other, Series):
-            return np.dot(lvals, rvals)
-        elif isinstance(rvals, np.ndarray):
+        elif isinstance(other, Series) or isinstance(rvals, np.ndarray):
             return np.dot(lvals, rvals)
         else:  # pragma: no cover
             raise TypeError(f"unsupported type: {type(other)}")
@@ -2718,8 +2713,7 @@ Name: Max Speed, dtype: float64
         from pandas.core.reshape.concat import concat
 
         if isinstance(to_append, (list, tuple)):
-            to_concat = [self]
-            to_concat.extend(to_append)
+            to_concat = [self, *to_append]
         else:
             to_concat = [self, to_append]
         if any(isinstance(x, (ABCDataFrame,)) for x in to_concat[1:]):
@@ -3496,17 +3490,17 @@ Keep all original rows and also all original values
         values = self._values
         mask = isna(values)
 
-        if mask.any():
-            result = Series(-1, index=self.index, name=self.name, dtype="int64")
-            notmask = ~mask
-            result[notmask] = np.argsort(values[notmask], kind=kind)
-            return self._constructor(result, index=self.index).__finalize__(
-                self, method="argsort"
-            )
-        else:
+        if not mask.any():
             return self._constructor(
                 np.argsort(values, kind=kind), index=self.index, dtype="int64"
             ).__finalize__(self, method="argsort")
+
+        result = Series(-1, index=self.index, name=self.name, dtype="int64")
+        notmask = ~mask
+        result[notmask] = np.argsort(values[notmask], kind=kind)
+        return self._constructor(result, index=self.index).__finalize__(
+            self, method="argsort"
+        )
 
     def nlargest(self, n=5, keep="first") -> Series:
         """
@@ -4003,8 +3997,7 @@ Keep all original rows and also all original values
             func = dict(kwargs.items())
 
         op = SeriesApply(self, func, convert_dtype=False, args=args, kwargs=kwargs)
-        result = op.agg()
-        return result
+        return op.agg()
 
     agg = aggregate
 
@@ -4018,10 +4011,9 @@ Keep all original rows and also all original values
     ) -> FrameOrSeriesUnion:
         # Validate axis argument
         self._get_axis_number(axis)
-        result = SeriesApply(
+        return SeriesApply(
             self, func=func, convert_dtype=True, args=args, kwargs=kwargs
         ).transform()
-        return result
 
     def apply(
         self,
@@ -4160,14 +4152,13 @@ Keep all original rows and also all original values
             # dispatch to ExtensionArray interface
             return delegate._reduce(name, skipna=skipna, **kwds)
 
-        else:
-            # dispatch to numpy arrays
-            if numeric_only:
-                raise NotImplementedError(
-                    f"Series.{name} does not implement numeric_only."
-                )
-            with np.errstate(all="ignore"):
-                return op(delegate, skipna=skipna, **kwds)
+        # dispatch to numpy arrays
+        if numeric_only:
+            raise NotImplementedError(
+                f"Series.{name} does not implement numeric_only."
+            )
+        with np.errstate(all="ignore"):
+            return op(delegate, skipna=skipna, **kwds)
 
     def _reindex_indexer(self, new_index, indexer, copy):
         if indexer is None:

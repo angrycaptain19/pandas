@@ -195,11 +195,10 @@ class BaseGrouper:
     def _get_group_keys(self):
         if len(self.groupings) == 1:
             return self.levels[0]
-        else:
-            comp_ids, _, ngroups = self.group_info
+        comp_ids, _, ngroups = self.group_info
 
-            # provide "flattened" iterator for multi-group setting
-            return get_flattened_list(comp_ids, ngroups, self.levels, self.codes)
+        # provide "flattened" iterator for multi-group setting
+        return get_flattened_list(comp_ids, ngroups, self.levels, self.codes)
 
     @final
     def apply(self, f: F, data: FrameOrSeries, axis: int = 0):
@@ -296,10 +295,7 @@ class BaseGrouper:
         """
         ids, _, ngroup = self.group_info
         ids = ensure_platform_int(ids)
-        if ngroup:
-            out = np.bincount(ids[ids != -1], minlength=ngroup)
-        else:
-            out = []
+        out = np.bincount(ids[ids != -1], minlength=ngroup) if ngroup else []
         return Series(out, index=self.result_index, dtype="int64")
 
     @cache_readonly
@@ -307,10 +303,9 @@ class BaseGrouper:
         """ dict {group name -> group labels} """
         if len(self.groupings) == 1:
             return self.groupings[0].groups
-        else:
-            to_groupby = zip(*(ping.grouper for ping in self.groupings))
-            index = Index(to_groupby)
-            return self.axis.groupby(index)
+        to_groupby = zip(*(ping.grouper for ping in self.groupings))
+        index = Index(to_groupby)
+        return self.axis.groupby(index)
 
     @final
     @cache_readonly
